@@ -24,9 +24,7 @@ async def _session_call(tool: str, args: dict):
     )
     async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
         await session.initialize()
-        tools = await session.list_tools()
-        result = await session.call_tool(tool, args)
-        return tools, result
+        return await session.call_tool(tool, args)
 
 
 def test_stdio_list_tools(monkeypatch):
@@ -50,7 +48,7 @@ def test_stdio_list_tools(monkeypatch):
 def test_stdio_session_info_no_secret_leak(monkeypatch):
     monkeypatch.setenv("ROUTER_PASSWORD", "dummy-test")
 
-    _, result = _run(_session_call("session_info", {}))
+    result = _run(_session_call("session_info", {}))
     body = json.loads(result.content[0].text)
     assert body["password_set"] is True
     assert "dummy-test" not in json.dumps(body)
@@ -59,6 +57,6 @@ def test_stdio_session_info_no_secret_leak(monkeypatch):
 def test_stdio_list_endpoints(monkeypatch):
     monkeypatch.setenv("ROUTER_PASSWORD", "dummy-test")
 
-    _, result = _run(_session_call("list_endpoints", {}))
+    result = _run(_session_call("list_endpoints", {}))
     body = json.loads(result.content[0].text)
     assert len(body["endpoints"]) >= 10
