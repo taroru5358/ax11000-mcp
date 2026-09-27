@@ -1,4 +1,4 @@
-"""AX11000 MCP server (stdio, Claude Code向け)."""
+"""TP-Link router MCP server (stdio, Claude Code向け)."""
 
 from __future__ import annotations
 
@@ -7,13 +7,14 @@ import json
 import re
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import parse_qsl, urlencode
 
 from mcp.server.fastmcp import FastMCP
 from tplinkrouterc6u import Connection, TplinkRouterProvider
 
 from .config import RouterConfig, load_config
 
-mcp = FastMCP("ax11000-mcp")
+mcp = FastMCP("tplink-router-mcp")
 
 ENDPOINT_CATALOG = [
     {
@@ -68,7 +69,9 @@ def _jsonable(obj: Any) -> Any:
     if hasattr(obj, "__dataclass_fields__"):
         out: dict[str, Any] = {}
         for f in obj.__dataclass_fields__:  # type: ignore[attr-defined]
-            out[f] = _jsonable(getattr(obj, f))
+            # tplinkrouterc6u は "_wan_ipv4_ipaddr" のような内部名のフィールドを持つ
+            key = f.lstrip("_") or f
+            out[key if key not in out else f] = _jsonable(getattr(obj, f))
         return out
     if hasattr(obj, "__dict__"):
         return {k: _jsonable(v) for k, v in vars(obj).items() if not k.startswith("_")}
@@ -87,9 +90,23 @@ _SENSITIVE_SUBSTRINGS = (
     "token",
     "stok",
     "sysauth",
+    "wep_key",
+    "wpa_key",
 )
 
-_MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$")
+# 非JSON文字列中の key=value / key: value 形式の秘密値
+_SENSITIVE_TEXT_RE = re.compile(
+    r"(?i)([\w-]*(?:" + "|".join(_SENSITIVE_SUBSTRINGS) + r")[\w-]*[\"']?\s*[=:]\s*[\"']?)"
+    r"[^\s&\"',;<}]+"
+)
+# エラーメッセージ中のURL/Cookieに含まれるセッション値
+_SESSION_RE = re.compile(r"(?i)((?:stok|sysauth)['\"]?\s*[=:]\s*['\"]?)[^/&\s'\";]+")
+
+# 区切り文字は ":" か "-" のどちらかに統一されていること
+_MAC_RE = re.compile(r"^[0-9A-Fa-f]{2}([:-])(?:[0-9A-Fa-f]{2}\1){4}[0-9A-Fa-f]{2}$")
+
+COMMENT_MAX_LEN = 32
+READ_OPERATIONS = ("read", "load")
 
 
 def _redact_recursive(obj: Any) -> Any:
@@ -105,13 +122,19 @@ def _redact_recursive(obj: Any) -> Any:
         return out
     if isinstance(obj, (list, tuple)):
         return [_redact_recursive(v) for v in obj]
+    if isinstance(obj, str):
+        return _SENSITIVE_TEXT_RE.sub(lambda m: m.group(1) + REDACTED, obj)
     return obj
 
 
-def _redact_wifi(d: dict, reveal: bool) -> dict:
-    if reveal:
-        return d
-    return _redact_recursive(d)
+def _mask_error(msg: str, password: str = "") -> str:
+    if password:
+        msg = msg.replace(password, REDACTED)
+    return _SESSION_RE.sub(lambda m: m.group(1) + REDACTED, msg)
+
+
+def _error(e: Exception) -> str:
+    return _mask_error(f"{type(e).__name__}: {e}")
 
 
 def _valid_mac(mac: str) -> bool:
@@ -134,27 +157,26 @@ def _get_client(cfg: RouterConfig | None = None):
     return client, cfg
 
 
-def _run(fn: Callable[[Any], Any]) -> Any:
+def _run(fn: Callable[[Any], Any], redact: bool = True) -> Any:
+    """authorize→fn→logout。戻り値は既定で秘密値をマスクする。"""
     client, cfg = _get_client()
     try:
         client.authorize()
         try:
-            return fn(client)
+            result = fn(client)
         finally:
             try:
                 client.logout()
             except Exception:
                 pass
     except Exception as e:
-        msg = str(e)
-        password = getattr(cfg, "password", "")
-        if password:
-            msg = msg.replace(password, REDACTED)
+        msg = _mask_error(str(e), getattr(cfg, "password", ""))
         raise RuntimeError(f"router request failed: {msg}") from e
+    return _redact_recursive(result) if redact else result
 
 
 def _unsupported(tool: str, e: Exception) -> dict:
-    return {"supported": False, "tool": tool, "error": f"{type(e).__name__}: {e}"}
+    return {"supported": False, "tool": tool, "error": _error(e)}
 
 
 @mcp.tool()
@@ -162,7 +184,7 @@ def router_overview() -> dict:
     """ダッシュボード: firmware/CPU/メモリ/WAN/デバイス台数。"""
 
     def _fn(client):
-        fw = _redact_recursive(_jsonable(client.get_firmware()))
+        fw = _jsonable(client.get_firmware())
         st = client.get_status()
         std = _jsonable(st)
         devices = std.pop("devices", []) if isinstance(std, dict) else []
@@ -189,7 +211,7 @@ def router_overview() -> dict:
         return {
             "firmware": fw,
             "summary": summary,
-            "status": _redact_recursive(std),
+            "status": std,
             "devices": devices,
         }
 
@@ -271,9 +293,9 @@ def get_wifi(band: str = "5g", reveal_secrets: bool = False) -> dict:
     try:
 
         def _fn(client):
-            return _redact_wifi(_jsonable(client.get_wifi(conn)), reveal_secrets)
+            return _jsonable(client.get_wifi(conn))
 
-        return _run(_fn)
+        return _run(_fn, redact=not reveal_secrets)
     except Exception as e:
         return _unsupported("get_wifi", e)
 
@@ -304,6 +326,8 @@ def add_reservation(
         return {"ok": False, "error": f"invalid macaddr: {macaddr}"}
     if not _valid_ipv4(ipaddr):
         return {"ok": False, "error": f"invalid ipaddr: {ipaddr}"}
+    if len(comment) > COMMENT_MAX_LEN:
+        return {"ok": False, "error": f"comment is too long (max {COMMENT_MAX_LEN})"}
 
     def _fn(client):
         client.add_ipv4_reservation(macaddr, ipaddr, comment, enable)
@@ -312,7 +336,7 @@ def add_reservation(
     try:
         return _run(_fn)
     except Exception as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        return {"ok": False, "error": _error(e)}
 
 
 @mcp.tool()
@@ -330,7 +354,7 @@ def delete_reservation(macaddr: str, confirm: bool = False) -> dict:
     try:
         return _run(_fn)
     except Exception as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        return {"ok": False, "error": _error(e)}
 
 
 @mcp.tool()
@@ -353,7 +377,7 @@ def set_wifi(band: str, enable: bool, confirm: bool = False) -> dict:
     try:
         return _run(_fn)
     except Exception as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        return {"ok": False, "error": _error(e)}
 
 
 @mcp.tool()
@@ -369,38 +393,42 @@ def reboot_router(confirm: bool = False) -> dict:
     try:
         return _run(_fn)
     except Exception as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        return {"ok": False, "error": _error(e)}
 
 
 @mcp.tool()
-def raw_request(path: str, data: str = "", operation: str = "read", confirm: bool = False) -> dict:
+def raw_request(path: str, data: str = "", operation: str = "", confirm: bool = False) -> dict:
     """任意エンドポイント読取。
 
     - path例: "admin/nat?form=vs", "admin/upnp?form=service"
-    - data例: "operation=load" 等。operation指定時は data に operation= が無ければ自動付与
+    - operation: 引数・data・path クエリのどこで指定してもよい (矛盾時は拒否)。未指定なら read
     - 戻り値の秘密値は常にマスク (reveal不可)
     - operation が read/load 以外の場合は書き込みとみなし confirm=true が必須
     """
 
-    op = (operation or "read").lower()
-    if op not in ("read", "load") and not confirm:
+    params = dict(parse_qsl(data, keep_blank_values=True))
+    query = dict(parse_qsl(path.partition("?")[2], keep_blank_values=True))
+    ops = {
+        v.strip().lower()
+        for v in (operation, params.get("operation"), query.get("operation"))
+        if v and v.strip()
+    }
+    if len(ops) > 1:
+        return {"ok": False, "error": f"operation が矛盾しています: {sorted(ops)}"}
+    op = ops.pop() if ops else "read"
+    if op not in READ_OPERATIONS and not confirm:
         return {"ok": False, "error": "confirm=true が必要です (安全ゲート)"}
+    params["operation"] = op
+    body = urlencode(params)
 
     def _fn(client):
         req = getattr(client, "request", None)
         if req is None:
             return {"supported": False, "error": "this client has no request()"}
-        body = data
-        if op and "operation=" not in body:
-            body = f"operation={op}" + (f"&{body}" if body else "")
-        try:
-            res = req(path, body)
-        except TypeError:
-            res = req(path, data)
-        j = _redact_recursive(_jsonable(res))
+        j = _jsonable(req(path, body))
         if isinstance(j, str):
             try:
-                return _redact_recursive(json.loads(j))
+                j = json.loads(j)
             except ValueError:
                 return {"raw": j[:8000]}
         return j if isinstance(j, dict) else {"result": j}
@@ -408,7 +436,7 @@ def raw_request(path: str, data: str = "", operation: str = "read", confirm: boo
     try:
         return _run(_fn)
     except Exception as e:
-        return {"supported": False, "error": f"{type(e).__name__}: {e}"}
+        return {"supported": False, "error": _error(e)}
 
 
 def main() -> None:
