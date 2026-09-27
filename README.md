@@ -1,4 +1,4 @@
-# ax11000-mcp
+# tplink-router-mcp
 
 TP-Link ルータ用の MCP サーバ。Claude Code 等から stdio で起動する想定。
 軽量 API 直結型 (`tplinkrouterc6u` 利用、Playwright 不要)。
@@ -32,7 +32,7 @@ TP-Link ルータ用の MCP サーバ。Claude Code 等から stdio で起動す
 ## セットアップ
 
 ```bash
-cd /path/to/ax11000-mcp  # cloneしたディレクトリ
+cd /path/to/tplink-router-mcp  # cloneしたディレクトリ
 uv sync --group dev
 ```
 
@@ -47,7 +47,7 @@ cp .env.example .env
 
 読み込む場所と優先度 (低→高):
 
-1. `~/.config/ax11000-mcp/.env` (リポジトリの外に置きたい場合)
+1. `~/.config/tplink-router-mcp/.env` (リポジトリの外に置きたい場合。旧名の `~/.config/ax11000-mcp/.env` も読みます)
 2. リポジトリ直下の `.env`
 3. `$TPLINK_ENV` で指定したファイル (ルータが複数あるときの切り替えなど)
 4. 環境変数
@@ -61,7 +61,7 @@ Claude Code をどのプロジェクトで開いていても、そのプロジ�
 ```bash
 uv run pytest -q
 uv run ruff check . && uv run ruff format --check .
-ROUTER_PASSWORD=dummy uv run ax11000-mcp --help || echo "stdio server (helpなしは正常)"
+ROUTER_PASSWORD=dummy uv run tplink-router-mcp --help || echo "stdio server (helpなしは正常)"
 ```
 
 ## Claude Code 登録例
@@ -69,9 +69,9 @@ ROUTER_PASSWORD=dummy uv run ax11000-mcp --help || echo "stdio server (helpな�
 ```json
 {
   "mcpServers": {
-    "ax11000": {
+    "tplink-router": {
       "command": "uv",
-      "args": ["--directory", "/path/to/ax11000-mcp", "run", "ax11000-mcp"],
+      "args": ["--directory", "/path/to/tplink-router-mcp", "run", "tplink-router-mcp"],
       "env": {}
     }
   }
@@ -116,11 +116,11 @@ LLM が読む Web ページやリポジトリの文章、LAN 内の機器が名�
 {
   "permissions": {
     "allow": [
-      "mcp__ax11000__router_overview",
-      "mcp__ax11000__list_devices",
-      "mcp__ax11000__get_firmware",
-      "mcp__ax11000__session_info",
-      "mcp__ax11000__list_endpoints"
+      "mcp__tplink-router__router_overview",
+      "mcp__tplink-router__list_devices",
+      "mcp__tplink-router__get_firmware",
+      "mcp__tplink-router__session_info",
+      "mcp__tplink-router__list_endpoints"
     ]
   }
 }

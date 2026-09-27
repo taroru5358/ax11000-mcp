@@ -1,6 +1,6 @@
 import pytest
 
-from ax11000_mcp.config import RouterConfig, load_config
+from tplink_router_mcp.config import RouterConfig, load_config
 
 
 def test_base_url():
@@ -33,8 +33,8 @@ def test_load_config_missing_password(isolated_env):
         load_config()
 
 
-def _write_user_env(home, text):
-    d = home / ".config" / "ax11000-mcp"
+def _write_user_env(home, text, name="tplink-router-mcp"):
+    d = home / ".config" / name
     d.mkdir(parents=True)
     (d / ".env").write_text(text)
 
@@ -56,12 +56,12 @@ def test_cwd_env_is_not_read(isolated_env):
 
 
 def test_repo_env_path_points_to_checkout_root():
-    from ax11000_mcp.config import _repo_env_path
+    from tplink_router_mcp.config import _repo_env_path
 
     path = _repo_env_path()
     assert path is not None
     assert (path.parent / "pyproject.toml").is_file()
-    assert (path.parent / "src" / "ax11000_mcp").is_dir()
+    assert (path.parent / "src" / "tplink_router_mcp").is_dir()
 
 
 def test_explicit_timeout_wins_over_env(monkeypatch, isolated_env):
@@ -94,3 +94,16 @@ def test_legacy_aliases_are_ignored(monkeypatch, isolated_env, key):
     monkeypatch.setenv(key, "legacy-pw")
     with pytest.raises(ValueError, match="password"):
         load_config()
+
+
+def test_legacy_user_config_dir_is_read(isolated_env):
+    home, _work, _repo = isolated_env
+    _write_user_env(home, "ROUTER_PASSWORD=legacy-pw\n", name="ax11000-mcp")
+    assert load_config().password == "legacy-pw"
+
+
+def test_new_user_config_dir_wins_over_legacy(isolated_env):
+    home, _work, _repo = isolated_env
+    _write_user_env(home, "ROUTER_PASSWORD=legacy-pw\n", name="ax11000-mcp")
+    _write_user_env(home, "ROUTER_PASSWORD=new-pw\n")
+    assert load_config().password == "new-pw"

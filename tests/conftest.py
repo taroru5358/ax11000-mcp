@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-import ax11000_mcp.server as srv
-from ax11000_mcp import config
-from ax11000_mcp.config import RouterConfig
+import tplink_router_mcp.server as srv
+from tplink_router_mcp import config
+from tplink_router_mcp.config import RouterConfig
 
 
 class FakeClient:

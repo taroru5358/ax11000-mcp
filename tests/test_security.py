@@ -4,7 +4,7 @@ from urllib.parse import parse_qsl
 
 import pytest
 
-from ax11000_mcp.server import (
+from tplink_router_mcp.server import (
     REDACTED,
     _redact_recursive,
     _valid_mac,
@@ -214,7 +214,7 @@ def test_delete_reservation_validates_mac():
 def test_jsonable_strips_private_field_prefix():
     from dataclasses import dataclass
 
-    from ax11000_mcp.server import _jsonable
+    from tplink_router_mcp.server import _jsonable
 
     @dataclass
     class S:

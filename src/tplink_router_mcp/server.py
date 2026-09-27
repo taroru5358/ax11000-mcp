@@ -1,4 +1,4 @@
-"""AX11000 MCP server (stdio, Claude Code向け)."""
+"""TP-Link router MCP server (stdio, Claude Code向け)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from tplinkrouterc6u import Connection, TplinkRouterProvider
 
 from .config import RouterConfig, load_config
 
-mcp = FastMCP("ax11000-mcp")
+mcp = FastMCP("tplink-router-mcp")
 
 ENDPOINT_CATALOG = [
     {

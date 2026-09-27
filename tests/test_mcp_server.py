@@ -19,7 +19,7 @@ def _run(coro):
 async def _session_call(tool: str, args: dict):
     params = StdioServerParameters(
         command="uv",
-        args=["run", "ax11000-mcp"],
+        args=["run", "tplink-router-mcp"],
         cwd=str(REPO_ROOT),
     )
     async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
@@ -33,7 +33,7 @@ def test_stdio_list_tools(monkeypatch):
     async def main():
         params = StdioServerParameters(
             command="uv",
-            args=["run", "ax11000-mcp"],
+            args=["run", "tplink-router-mcp"],
             cwd=str(REPO_ROOT),
         )
         async with stdio_client(params) as (read, write), ClientSession(read, write) as session:

@@ -69,3 +69,10 @@
   * dataclass の内部名（`_wan_ipv4_ipaddr` 等）がそのまま出力された → 先頭の "_" を除去
   * 2 つ目の 5GHz バンド（`wireless_5g_2`）はライブラリ未対応 → README に `raw_request` での読み取り方法を記載
 - 残課題: `add_reservation` の comment が `list_reservations` の結果に出ない（ライブラリの IPv4Reservation に comment 項目が無い）。実害はないため対応しない
+
+## リポジトリ名の変更（2026-09-28）
+
+- AX11000 専用ではなくなったため、`ax11000-mcp` から `tplink-router-mcp` に変更した
+  * パッケージ `ax11000_mcp` → `tplink_router_mcp`、コマンド `ax11000-mcp` → `tplink-router-mcp`、FastMCP のサーバ名、README の登録例（`tplink-router`）
+  * 設定ディレクトリは `~/.config/tplink-router-mcp/`。旧名の `~/.config/ax11000-mcp/.env` も互換のため読む（新しい方が優先）
+- 確認: テスト 46 passed。新しいコマンド名で起動し、旧設定ディレクトリの認証情報で実機の `get_firmware` が成功した
