@@ -3,6 +3,7 @@ name = "ax11000-mcp"
 version = "0.1.0"
 description = "TP-Link Archer AX11000 MCP server (Claude Code stdio)"
 readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = [
   "mcp>=1.9,<2",

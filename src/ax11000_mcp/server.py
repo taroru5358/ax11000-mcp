@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -36,7 +38,7 @@ ENDPOINT_CATALOG = [
     {
         "name": "raw_request",
         "kind": "raw",
-        "desc": "任意エンドポイント呼び出し (syslog/無線詳細等は機種差のためこちら)",
+        "desc": "任意エンドポイント読取 (秘密値は常にマスク。read/load以外はconfirm必須)",
     },
 ]
 
@@ -73,23 +75,67 @@ def _jsonable(obj: Any) -> Any:
     return str(obj)
 
 
+REDACTED = "*** (masked)"
+
+# 部分一致で秘密値とみなすキー (小文字比較)。"key" は予約ID等でも使うため対象外
+_SENSITIVE_SUBSTRINGS = (
+    "password",
+    "passwd",
+    "psk",
+    "passphrase",
+    "secret",
+    "token",
+    "stok",
+    "sysauth",
+)
+
+_MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$")
+
+
+def _redact_recursive(obj: Any) -> Any:
+    """入れ子構造を再帰走査し、秘密値らしいキーの値をマスクする。"""
+    if isinstance(obj, dict):
+        out: dict[str, Any] = {}
+        for k, v in obj.items():
+            kl = str(k).lower()
+            if any(s in kl for s in _SENSITIVE_SUBSTRINGS) and v:
+                out[k] = REDACTED
+            else:
+                out[k] = _redact_recursive(v)
+        return out
+    if isinstance(obj, (list, tuple)):
+        return [_redact_recursive(v) for v in obj]
+    return obj
+
+
 def _redact_wifi(d: dict, reveal: bool) -> dict:
     if reveal:
         return d
-    redacted = dict(d)
-    for k in ("psk_key", "password", "portal_password", "psk", "key"):
-        if redacted.get(k):
-            redacted[k] = "*** (reveal_secrets=true で開示)"
-    return redacted
+    return _redact_recursive(d)
+
+
+def _valid_mac(mac: str) -> bool:
+    return bool(_MAC_RE.fullmatch(mac.strip()))
+
+
+def _valid_ipv4(addr: str) -> bool:
+    try:
+        ipaddress.IPv4Address(addr.strip())
+        return True
+    except ipaddress.AddressValueError:
+        return False
 
 
 def _get_client(cfg: RouterConfig | None = None):
     cfg = cfg or load_config()
-    return TplinkRouterProvider.get_client(cfg.base_url(), cfg.password, cfg.username), cfg
+    client = TplinkRouterProvider.get_client(
+        cfg.base_url(), cfg.password, cfg.username, timeout=cfg.timeout
+    )
+    return client, cfg
 
 
 def _run(fn: Callable[[Any], Any]) -> Any:
-    client, _ = _get_client()
+    client, cfg = _get_client()
     try:
         client.authorize()
         try:
@@ -100,7 +146,11 @@ def _run(fn: Callable[[Any], Any]) -> Any:
             except Exception:
                 pass
     except Exception as e:
-        raise RuntimeError(f"router request failed: {e}") from e
+        msg = str(e)
+        password = getattr(cfg, "password", "")
+        if password:
+            msg = msg.replace(password, REDACTED)
+        raise RuntimeError(f"router request failed: {msg}") from e
 
 
 def _unsupported(tool: str, e: Exception) -> dict:
@@ -112,7 +162,7 @@ def router_overview() -> dict:
     """ダッシュボード: firmware/CPU/メモリ/WAN/デバイス台数。"""
 
     def _fn(client):
-        fw = _jsonable(client.get_firmware())
+        fw = _redact_recursive(_jsonable(client.get_firmware()))
         st = client.get_status()
         std = _jsonable(st)
         devices = std.pop("devices", []) if isinstance(std, dict) else []
@@ -136,7 +186,12 @@ def router_overview() -> dict:
             ):
                 if k in std:
                     summary[k] = std[k]
-        return {"firmware": fw, "summary": summary, "status": std, "devices": devices}
+        return {
+            "firmware": fw,
+            "summary": summary,
+            "status": _redact_recursive(std),
+            "devices": devices,
+        }
 
     return _run(_fn)
 
@@ -245,6 +300,10 @@ def add_reservation(
     """
     if not confirm:
         return {"ok": False, "error": "confirm=true が必要です (安全ゲート)"}
+    if not _valid_mac(macaddr):
+        return {"ok": False, "error": f"invalid macaddr: {macaddr}"}
+    if not _valid_ipv4(ipaddr):
+        return {"ok": False, "error": f"invalid ipaddr: {ipaddr}"}
 
     def _fn(client):
         client.add_ipv4_reservation(macaddr, ipaddr, comment, enable)
@@ -261,6 +320,8 @@ def delete_reservation(macaddr: str, confirm: bool = False) -> dict:
     """DHCP予約削除。confirm=true が必須。"""
     if not confirm:
         return {"ok": False, "error": "confirm=true が必要です (安全ゲート)"}
+    if not _valid_mac(macaddr):
+        return {"ok": False, "error": f"invalid macaddr: {macaddr}"}
 
     def _fn(client):
         client.delete_ipv4_reservation(macaddr)
@@ -312,29 +373,34 @@ def reboot_router(confirm: bool = False) -> dict:
 
 
 @mcp.tool()
-def raw_request(path: str, data: str = "", operation: str = "read") -> dict:
-    """任意エンドポイント呼び出し。
+def raw_request(path: str, data: str = "", operation: str = "read", confirm: bool = False) -> dict:
+    """任意エンドポイント読取。
 
-    - path例: "status?form=client_status", "admin?form=syslog"
+    - path例: "admin/nat?form=vs", "admin/upnp?form=service"
     - data例: "operation=load" 等。operation指定時は data に operation= が無ければ自動付与
-    - 機種差のある syslog/無線詳細/guest等はこちらで取得
+    - 戻り値の秘密値は常にマスク (reveal不可)
+    - operation が read/load 以外の場合は書き込みとみなし confirm=true が必須
     """
+
+    op = (operation or "read").lower()
+    if op not in ("read", "load") and not confirm:
+        return {"ok": False, "error": "confirm=true が必要です (安全ゲート)"}
 
     def _fn(client):
         req = getattr(client, "request", None)
         if req is None:
             return {"supported": False, "error": "this client has no request()"}
         body = data
-        if operation and "operation=" not in body:
-            body = f"operation={operation}" + (f"&{body}" if body else "")
+        if op and "operation=" not in body:
+            body = f"operation={op}" + (f"&{body}" if body else "")
         try:
             res = req(path, body)
         except TypeError:
             res = req(path, data)
-        j = _jsonable(res)
+        j = _redact_recursive(_jsonable(res))
         if isinstance(j, str):
             try:
-                return json.loads(j)
+                return _redact_recursive(json.loads(j))
             except ValueError:
                 return {"raw": j[:8000]}
         return j if isinstance(j, dict) else {"result": j}
