@@ -9,11 +9,11 @@ AX11000 V1 は `tplinkrouterc6u` のサポート対象。
 ## セットアップ
 
 ```bash
-cd ~/git_work/ax11000-mcp
+cd /path/to/ax11000-mcp  # cloneしたディレクトリ
 uv sync --group dev
 ```
 
-認証情報はファイルに保存 (優先度 低→高: `~/.config/ax11000-mcp/.env` → `./.env` → `$TPLINK_ENV` → 環境変数):
+認証情報はファイルに保存 (優先度 低→高: `~/.config/ax11000-mcp/.env` → `./.env` → `$TPLINK_ENV`/`$AX11000_ENV` → 環境変数):
 
 ```bash
 mkdir -p ~/.config/ax11000-mcp
@@ -38,7 +38,7 @@ ROUTER_PASSWORD=dummy uv run ax11000-mcp --help || echo "stdio server (helpな�
   "mcpServers": {
     "ax11000": {
       "command": "uv",
-      "args": ["--directory", "~/git_work/ax11000-mcp", "run", "ax11000-mcp"],
+      "args": ["--directory", "/path/to/ax11000-mcp", "run", "ax11000-mcp"],
       "env": {}
     }
   }
@@ -57,8 +57,10 @@ ROUTER_PASSWORD=dummy uv run ax11000-mcp --help || echo "stdio server (helpな�
 
 汎用: `raw_request(path, data, operation)` — syslog/無線詳細/guest 等の機種差分はこちら。
 例: `raw_request(path="status?form=client_status", operation="read")`
+戻り値の秘密値は常にマスク。`read`/`load` 以外のoperationは書き込みとみなし `confirm=true` が必須。
 
 注意:
 - ルータは同時1セッション制限。各ツールは authorize→実行→logout する
-- Wi-Fi 秘密値は既定マスク (`reveal_secrets=true` で開示)
+- Wi-Fi 秘密値は既定マスク (`reveal_secrets=true` で開示)。`raw_request` の戻り値は常にマスク
 - Local Password を使うこと (TP-Link ID不可)。https を使う場合はルータ側で Local Management via HTTPS を有効化
+- 既定の接続は平文HTTP (LAN内利用想定)。`ROUTER_IP` に `https://...` を指定すればHTTPSで接続する
