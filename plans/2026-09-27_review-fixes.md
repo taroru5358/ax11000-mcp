@@ -32,7 +32,7 @@
 
 ## リスクと対策
 
-- `./.env` を既定で読まなくなるため、既存利用者の挙動が変わる → README に移行方法（`~/.config` へ移すか、オプトイン用の環境変数を設定する）を書く
+- 設定の読み込み元が変わる → README に読み込み元と優先度を明記する（当初はオプトイン方式を想定していたが、後述の変更履歴のとおりリポジトリ直下を読む方式に変更）
 - `raw_request` の body を組み直すことでエンコードが変わる → `parse_qsl` / `urlencode` で往復させ、値は保持する
 
 ## 完了条件
@@ -76,3 +76,13 @@
   * パッケージ `ax11000_mcp` → `tplink_router_mcp`、コマンド `ax11000-mcp` → `tplink-router-mcp`、FastMCP のサーバ名、README の登録例（`tplink-router`）
   * 設定ディレクトリは `~/.config/tplink-router-mcp/`。旧名の `~/.config/ax11000-mcp/.env` も互換のため読む（新しい方が優先）
 - 確認: テスト 46 passed。新しいコマンド名で起動し、旧設定ディレクトリの認証情報で実機の `get_firmware` が成功した
+
+## 旧名の互換読み込みを削除（2026-09-28）
+
+- ユーザー判断で `~/.config/ax11000-mcp/.env` の互換読み込みを削除した。設定ディレクトリは `~/.config/tplink-router-mcp/` のみ
+  * 手元の設定は `~/.config/tplink-router-mcp/` へ移動済み。実機の `get_firmware` 成功を確認
+- 変更に伴い、stdio スモークテストが手元の旧設定ファイルに依存して通っていたことが判明した
+  * `stdio_client` は `env` 未指定だと一部の変数しか子プロセスに渡さず、`monkeypatch.setenv` が効いていなかった
+  * `env` にダミーの `ROUTER_PASSWORD` を明示的に渡すよう修正した
+- `.gitignore` に `.claude/` と `.serena/` を追加した
+- 確認: テスト 45 passed、`ruff check` / `ruff format --check` 通過

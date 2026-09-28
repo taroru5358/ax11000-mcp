@@ -47,7 +47,7 @@ cp .env.example .env
 
 読み込む場所と優先度 (低→高):
 
-1. `~/.config/tplink-router-mcp/.env` (リポジトリの外に置きたい場合。旧名の `~/.config/ax11000-mcp/.env` も読みます)
+1. `~/.config/tplink-router-mcp/.env` (リポジトリの外に置きたい場合)
 2. リポジトリ直下の `.env`
 3. `$TPLINK_ENV` で指定したファイル (ルータが複数あるときの切り替えなど)
 4. 環境変数
