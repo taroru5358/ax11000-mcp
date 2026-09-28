@@ -1,7 +1,7 @@
 """Config loading for TP-Link router MCP.
 
 Precedence (low -> high):
-  1. ~/.config/tplink-router-mcp/.env (legacy ~/.config/ax11000-mcp/.env is read first)
+  1. ~/.config/tplink-router-mcp/.env
   2. <repo root>/.env (source checkout only; independent of cwd)
   3. file pointed by $TPLINK_ENV
   4. real environment variables
@@ -16,8 +16,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-# 旧名 (ax11000-mcp) の設定ディレクトリも互換のため読む。後ろほど優先
-USER_CONFIG_DIRS = ("ax11000-mcp", "tplink-router-mcp")
+USER_CONFIG_DIR = "tplink-router-mcp"
 
 ENV_KEYS = (
     "ROUTER_IP",
@@ -79,9 +78,8 @@ def load_config(
 ) -> RouterConfig:
     merged: dict[str, str] = {}
 
-    # 1. user config (legacy dir from the ax11000-mcp era first, new dir wins)
-    for name in USER_CONFIG_DIRS:
-        merged.update(_read_dotenv_file(Path.home() / ".config" / name / ".env"))
+    # 1. user config
+    merged.update(_read_dotenv_file(Path.home() / ".config" / USER_CONFIG_DIR / ".env"))
     # 2. repo local (next to pyproject.toml, not cwd)
     repo_env = _repo_env_path()
     if repo_env is not None:

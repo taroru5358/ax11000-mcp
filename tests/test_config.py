@@ -96,14 +96,8 @@ def test_legacy_aliases_are_ignored(monkeypatch, isolated_env, key):
         load_config()
 
 
-def test_legacy_user_config_dir_is_read(isolated_env):
+def test_legacy_user_config_dir_is_ignored(isolated_env):
     home, _work, _repo = isolated_env
     _write_user_env(home, "ROUTER_PASSWORD=legacy-pw\n", name="ax11000-mcp")
-    assert load_config().password == "legacy-pw"
-
-
-def test_new_user_config_dir_wins_over_legacy(isolated_env):
-    home, _work, _repo = isolated_env
-    _write_user_env(home, "ROUTER_PASSWORD=legacy-pw\n", name="ax11000-mcp")
-    _write_user_env(home, "ROUTER_PASSWORD=new-pw\n")
-    assert load_config().password == "new-pw"
+    with pytest.raises(ValueError, match="password"):
+        load_config()
