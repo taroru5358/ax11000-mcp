@@ -11,3 +11,7 @@ build/
 # ローカル専用のツール設定
 .claude/
 .serena/
+
+# 作業記録（計画・レビュー）はローカルのみで管理
+plans/
+reviews/
