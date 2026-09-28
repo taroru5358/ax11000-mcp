@@ -82,22 +82,3 @@ ROUTER_PASSWORD=dummy uv run tplink-router-mcp --help || echo "stdio server (no 
 
 Credentials are read from `.env`, so `env` can stay empty.
 Only if you want to hard-code the password, add `"env": {"ROUTER_PASSWORD": "..."}`.
-
-## Tools
-
-Read: `router_overview`, `list_devices`, `get_firmware`, `get_ipv4_status`, `get_ipv6_status`,
-`get_dhcp_leases`, `list_reservations`, `get_mesh_nodes`, `get_wifi`, `session_info`, `list_endpoints`
-
-Write (confirm required): `add_reservation`, `delete_reservation`, `set_wifi`, `reboot_router`
-
-Generic: `raw_request(path, data, operation)` — for syslog, detailed wireless settings, guest network and other model-specific endpoints.
-Example: `raw_request(path="status?form=client_status", operation="read")`
-Secrets in the response are always masked. Any operation other than `read`/`load` is treated as a write and requires `confirm=true`.
-The operation is checked wherever it is specified: the `operation` argument, `data`, or the query string of `path`. Conflicting values are rejected.
-
-Notes:
-- The router allows only one session at a time. Each tool does authorize → run → logout
-- All tool results and error messages mask secrets (password / PSK / stok / sysauth, etc.). Only Wi-Fi secrets can be revealed, with `get_wifi(reveal_secrets=true)`
-- The `add_reservation` comment is limited to 32 characters. MAC addresses must use a single separator consistently, either `:` or `-`
-- Use the Local Password (a TP-Link ID does not work). For HTTPS, enable Local Management via HTTPS on the router
-- The default connection is plain HTTP (intended for use within the LAN). Set `ROUTER_IP` to `https://...` to connect over HTTPS
