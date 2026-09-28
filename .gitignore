@@ -7,3 +7,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# ローカル専用のツール設定
+.claude/
+.serena/
